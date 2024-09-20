@@ -25,8 +25,7 @@ def generate_options_keyboard(answer_options, right_answer):
     return builder.as_markup()
 
 
-@dp.callback_query(F.data == "right_answer")
-async def right_answer(callback: types.CallbackQuery):
+async def handle_answer(callback: types.CallbackQuery, is_correct: bool):
     # Получаем текст ответа пользователя
     user_answer = callback.message.reply_markup.inline_keyboard[0][0].text
 
@@ -36,9 +35,16 @@ async def right_answer(callback: types.CallbackQuery):
         reply_markup=None,
     )
 
-    await callback.message.answer(f"Верно! Ваш ответ: {user_answer}")
-
     current_question_index = await get_quiz_index(callback.from_user.id)
+
+    if is_correct:
+        await callback.message.answer(f"Верно! Ваш ответ: {user_answer}")
+    else:
+        correct_option = quiz_data[current_question_index]["correct_option"]
+        await callback.message.answer(
+            f"Неправильно. Правильный ответ: {quiz_data[current_question_index]['options'][correct_option]}. Ваш ответ: {user_answer}"
+        )
+
     # Обновление номера текущего вопроса в базе данных
     current_question_index += 1
     await update_quiz_index(callback.from_user.id, current_question_index)
@@ -46,37 +52,18 @@ async def right_answer(callback: types.CallbackQuery):
     if current_question_index < len(quiz_data):
         await get_question(callback.message, callback.from_user.id)
     else:
-        await save_result(callback.from_user.id, True)
+        await save_result(callback.from_user.id, is_correct)
         await callback.message.answer("Это был последний вопрос. Квиз завершен!")
+
+
+@dp.callback_query(F.data == "right_answer")
+async def right_answer(callback: types.CallbackQuery):
+    await handle_answer(callback, is_correct=True)
 
 
 @dp.callback_query(F.data == "wrong_answer")
 async def wrong_answer(callback: types.CallbackQuery):
-    # Получаем текст ответа пользователя
-    user_answer = callback.message.reply_markup.inline_keyboard[0][0].text
-
-    await callback.bot.edit_message_reply_markup(
-        chat_id=callback.from_user.id,
-        message_id=callback.message.message_id,
-        reply_markup=None,
-    )
-
-    current_question_index = await get_quiz_index(callback.from_user.id)
-    correct_option = quiz_data[current_question_index]["correct_option"]
-
-    await callback.message.answer(
-        f"Неправильно. Правильный ответ: {quiz_data[current_question_index]['options'][correct_option]}. Ваш ответ: {user_answer}"
-    )
-
-    # Обновление номера текущего вопроса в базе данных
-    current_question_index += 1
-    await update_quiz_index(callback.from_user.id, current_question_index)
-
-    if current_question_index < len(quiz_data):
-        await get_question(callback.message, callback.from_user.id)
-    else:
-        await save_result(callback.from_user.id, False)
-        await callback.message.answer("Это был последний вопрос. Квиз завершен!")
+    await handle_answer(callback, is_correct=False)
 
 
 async def get_question(message, user_id):
